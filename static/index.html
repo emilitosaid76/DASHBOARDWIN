@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#111217; --panel:#181b1f; --border:#2a2d33; --text:#d8d9da; --muted:#8e9196;
+          --green:#73bf69; --yellow:#f2cc0c; --orange:#eab839; --red:#f2495c; }
+  * { box-sizing:border-box; margin:0; }
+  html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--text);
+               font-family: Inter, "Segoe UI", sans-serif; cursor:none; }
+  #grid { display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(2,1fr);
+          gap:0.8vmin; padding:0.8vmin; width:100vw; height:100vh; }
+  @media (orientation: portrait) {   /* pantalla vertical: 2 columnas x 3 filas */
+    #grid { grid-template-columns:repeat(2,1fr); grid-template-rows:repeat(3,1fr); }
+    .value { font-size:7vmin; }
+    .title { font-size:2.2vmin; }
+    .sub { font-size:2.2vmin; }
+  }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:4px;
+           display:grid; grid-template-rows:auto 1fr 1fr; min-height:0; padding:0.8vmin 1vmin; }
+  .title { font-size:1.6vmin; color:var(--text); }
+  .gauge { position:relative; min-height:0; }
+  .gauge svg, .graph canvas { width:100%; height:100%; display:block; }
+  .value { position:absolute; left:0; right:0; bottom:22%; text-align:center;
+           font-size:5.5vmin; font-weight:500; }
+  .sub { position:absolute; left:0; right:0; bottom:8%; text-align:center;
+         font-size:1.7vmin; color:var(--muted); }
+  .graph { min-height:0; position:relative; }
+  #status { position:fixed; right:1vmin; bottom:0.5vmin; font-size:1.3vmin; color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="grid"></div>
+<div id="status"></div>
+<script>
+const HIST = 300;           // puntos de historial (1 por segundo)
+const PANELS = [
+  { id:"cpu_use",  title:"CPU use",   unit:"%",  max:100, warn:60, crit:85, get:s=>s.cpu.use },
+  { id:"cpu_temp", title:"CPU temp",  unit:"°C", max:110, warn:70, crit:90, get:s=>s.cpu.temp },
+  { id:"mem_use",  title:"MEM use",   unit:"%",  max:100, warn:70, crit:90, get:s=>s.mem.use,
+    sub:s=>`${s.mem.used.toFixed(1)} / ${s.mem.total.toFixed(0)} GB` },
+  { id:"gpu_use",  title:"GPU use",   unit:"%",  max:100, warn:60, crit:90, get:s=>s.gpu&&s.gpu.use },
+  { id:"gpu_temp", title:"GPU temp",  unit:"°C", max:110, warn:70, crit:85, get:s=>s.gpu&&s.gpu.temp },
+  { id:"gpu_power",title:"GPU power", unit:"W",  max:s=>(s.gpu&&s.gpu.power_max)||350, warn:.6, crit:.9, rel:true,
+    get:s=>s.gpu&&s.gpu.power },
+];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const grid = document.getElementById("grid");
+const NS = "http://www.w3.org/2000/svg";
+
+PANELS.forEach(p => {
+  p.hist = [];
+  const el = document.createElement("div"); el.className = "panel";
+  el.innerHTML = `<div class="title">${p.title}</div>
+    <div class="gauge"><svg viewBox="0 0 200 120" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="value">–</div><div class="sub"></div></div>
+    <div class="graph"><canvas></canvas></div>`;
+  grid.appendChild(el);
+  p.svg = el.querySelector("svg"); p.val = el.querySelector(".value");
+  p.subEl = el.querySelector(".sub"); p.cv = el.querySelector("canvas");
+});
+
+function colorFor(p, v, max) {
+  const f = v / max, w = p.rel ? p.warn : p.warn / max, c = p.rel ? p.crit : p.crit / max;
+  return f >= c ? css("--red") : f >= w ? css("--orange") : css("--green");
+}
+function arc(cx, cy, r, a0, a1) {   // ángulos en grados, 180=izq, 0=der (semi/3-4 círculo)
+  const pt = a => [cx + r*Math.cos(a*Math.PI/180), cy - r*Math.sin(a*Math.PI/180)];
+  const [x0,y0] = pt(a0), [x1,y1] = pt(a1);
+  return `M${x0} ${y0} A${r} ${r} 0 ${Math.abs(a0-a1)>180?1:0} 1 ${x1} ${y1}`;
+}
+function path(d, color, w) {
+  const e = document.createElementNS(NS, "path");
+  e.setAttribute("d", d); e.setAttribute("stroke", color); e.setAttribute("stroke-width", w);
+  e.setAttribute("fill", "none"); e.setAttribute("stroke-linecap", "butt"); return e;
+}
+function drawGauge(p, v, max) {
+  p.svg.replaceChildren();
+  const A0 = 225, A1 = -45, span = A0 - A1;       // arco de 270°
+  p.svg.appendChild(path(arc(100,70,52,A0,A1), "#2a2d33", 12));
+  if (v != null) {
+    const a = A0 - span * Math.min(v / max, 1);
+    p.svg.appendChild(path(arc(100,70,52,A0,a), colorFor(p, v, max), 12));
+  }
+}
+function drawGraph(p, max) {
+  const cv = p.cv, dpr = devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w*dpr) { cv.width = w*dpr; cv.height = h*dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+  const padL = 34, padB = 6, padT = 12, W = w-padL, H = h-padB-padT;
+  g.font = `${Math.min(13, Math.max(10, h*.09))}px sans-serif`; g.fillStyle = css("--muted");
+  g.strokeStyle = "#2a2d33"; g.lineWidth = 1;
+  for (let i = 0; i <= 2; i++) {
+    const y = padT + H - H*i/2;
+    g.beginPath(); g.moveTo(padL,y); g.lineTo(w,y); g.stroke();
+    g.fillText(Math.round(max*i/2), 2, y+4);
+  }
+  if (p.hist.length < 2) return;
+  g.strokeStyle = css("--green"); g.lineWidth = 1.5; g.beginPath();
+  let started = false;
+  p.hist.forEach((v, i) => {
+    if (v == null) { started = false; return; }
+    const x = padL + W * i / (HIST-1), y = padT + H - H*Math.min(v/max,1);
+    started ? g.lineTo(x,y) : g.moveTo(x,y); started = true;
+  });
+  g.stroke();
+}
+
+async function tick() {
+  try {
+    const s = await (await fetch("/api/stats", {cache:"no-store"})).json();
+    PANELS.forEach(p => {
+      const max = typeof p.max === "function" ? p.max(s) : p.max;
+      const v = p.get(s) ?? null;
+      p.hist.push(v); if (p.hist.length > HIST) p.hist.shift();
+      p.val.textContent = v == null ? "N/A" : `${v.toFixed(p.unit==="%"||p.unit==="°C" ? 0 : 0)} ${p.unit}`;
+      p.val.style.color = v == null ? css("--muted") : colorFor(p, v, max);
+      p.subEl.textContent = p.sub ? p.sub(s) : "";
+      drawGauge(p, v, max); drawGraph(p, max);
+    });
+    document.getElementById("status").textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("status").textContent = "sin conexión con el servidor";
+  }
+}
+tick(); setInterval(tick, 1000);
+addEventListener("resize", tick);
+</script>
+</body>
+</html>
