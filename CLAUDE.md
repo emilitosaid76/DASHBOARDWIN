@@ -15,6 +15,12 @@ Dashboard de monitoreo para Windows, estilo Grafana, a pantalla completa en una 
 - `instalar.bat`: clona/actualiza el repo en `%USERPROFILE%\DASHBOARDWIN`, instala deps y lanza.
 
 ## Estado
-- Probado solo en Linux (servidor + render vertical simulado 1080x1920). **Sin probar en Windows**: detección de pantalla, nvidia-smi, temp CPU, instalar.bat.
-- Siguiente paso: correr en el PC real (sesión local) y corregir lo que salga N/A o abra en la pantalla equivocada.
-- El servidor escucha solo en localhost; si se quiere ver desde otro equipo, cambiar a 0.0.0.0 y abrir el firewall.
+
+- **Entorno de prueba:** Validado en Windows 11 (Ryzen 9 7950X, RTX 3090, monitor vertical 800x1280). `run.ps1` detecta correctamente pantalla secundaria en modo kiosco; `nvidia-smi` operativo.
+- **Corrección de Bug:** Solucionado error de lectura de CPU (siempre 0) implementando un hilo *daemon* en `server.py` que muestrea cada 1s, evitando el conflicto de hilos entre `psutil` y `ThreadingHTTPServer`.
+- **Configuración Chrome:** `run.ps1` incluye flags (`--no-first-run`, `--no-default-browser-check`, `--disable-features=ChromeWhatsNewUI,SigninInterceptBubble`) para omitir diálogos de login en Chrome 154 con perfiles temporales.
+- **Interfaz visual:** Medidores con degradado según posición (amarillo suave `hsl(52,85%,72%)` → rojo al 90%). Color aplicado también a valores numéricos (`gradColor/colorFor` en `static/index.html`). Línea de historial mantiene color verde.
+- **Monitoreo térmico:** Temperatura de CPU operativa mediante LibreHardwareMonitor v0.9.6 en ruta específica, ejecutado vía tarea programada como administrador al iniciar sesión. Servidor web en puerto 8085.
+- **Red:** Servidor configurado para escuchar únicamente en `127.0.0.1`.
+- **Pendiente de pruebas:** Ejecución de `instalar.bat`.
+- **Próximos pasos:** Decidir si la línea de historial usará degradado; evaluar implementación de paneles para red y VRAM.
