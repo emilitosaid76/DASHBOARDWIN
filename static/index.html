@@ -62,10 +62,12 @@ PANELS.forEach(p => {
   p.subEl = el.querySelector(".sub"); p.cv = el.querySelector("canvas");
 });
 
-function colorFor(p, v, max) {
-  const f = v / max, w = p.rel ? p.warn : p.warn / max, c = p.rel ? p.crit : p.crit / max;
-  return f >= c ? css("--red") : f >= w ? css("--orange") : css("--green");
+function gradColor(f) {   // amarillo suave (f=0) -> rojo (f>=0.9)
+  f = Math.max(0, Math.min(1, f));
+  const t = Math.min(f, 0.9) / 0.9;
+  return `hsl(${52 - 60*t}, ${85 + 2*t}%, ${72 - 11*t}%)`;
 }
+function colorFor(p, v, max) { return gradColor(v / max); }
 function arc(cx, cy, r, a0, a1) {   // ángulos en grados, 180=izq, 0=der (semi/3-4 círculo)
   const pt = a => [cx + r*Math.cos(a*Math.PI/180), cy - r*Math.sin(a*Math.PI/180)];
   const [x0,y0] = pt(a0), [x1,y1] = pt(a1);
@@ -78,11 +80,14 @@ function path(d, color, w) {
 }
 function drawGauge(p, v, max) {
   p.svg.replaceChildren();
-  const A0 = 225, A1 = -45, span = A0 - A1;       // arco de 270°
+  const A0 = 225, A1 = -45, span = A0 - A1, step = 3;   // arco de 270°
   p.svg.appendChild(path(arc(100,70,52,A0,A1), "#2a2d33", 12));
   if (v != null) {
-    const a = A0 - span * Math.min(v / max, 1);
-    p.svg.appendChild(path(arc(100,70,52,A0,a), colorFor(p, v, max), 12));
+    const target = A0 - span * Math.max(0, Math.min(v / max, 1));
+    for (let a = A0; a > target; a -= step) {
+      const n = Math.max(target, a - step);
+      p.svg.appendChild(path(arc(100,70,52,a,n), gradColor((A0 - (a + n) / 2) / span), 12));
+    }
   }
 }
 function drawGraph(p, max) {

@@ -1,4 +1,4 @@
-# Detecta la pantalla secundaria (auxiliar), muestra su resolucion y abre el dashboard en kiosco ahi.
+﻿# Detecta la pantalla secundaria (auxiliar), muestra su resolucion y abre el dashboard en kiosco ahi.
 Add-Type -AssemblyName System.Windows.Forms
 $screens = [System.Windows.Forms.Screen]::AllScreens
 $screens | ForEach-Object { "{0} primary={1} {2}x{3} en ({4},{5})" -f $_.DeviceName,$_.Primary,$_.Bounds.Width,$_.Bounds.Height,$_.Bounds.X,$_.Bounds.Y }
@@ -15,6 +15,7 @@ $cands = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe")
 $b = $cands | Where-Object { Test-Path $_ } | Select-Object -First 1
-Start-Process $b -ArgumentList @("--user-data-dir=$env:TEMP\dash-profile","--new-window",
+Start-Process $b -ArgumentList @("--user-data-dir=$env:TEMP\dash-profile","--new-window","--no-first-run","--no-default-browser-check","--disable-features=ChromeWhatsNewUI,SigninInterceptBubble",
   "--window-position=$($s.Bounds.X),$($s.Bounds.Y)","--window-size=$($s.Bounds.Width),$($s.Bounds.Height)",
   "--kiosk","http://localhost:8000")
+

@@ -7,6 +7,7 @@
 import json
 import os
 import subprocess
+import threading
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -17,7 +18,17 @@ LHM_URL = os.environ.get("LHM_URL", "http://localhost:8085/data.json")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-psutil.cpu_percent(None)  # primera lectura descartada
+CPU_USE = 0.0
+
+
+def _update_cpu():
+    # psutil guarda la lectura previa por hilo; muestrear en un hilo fijo
+    global CPU_USE
+    while True:
+        CPU_USE = psutil.cpu_percent(interval=1)
+
+
+threading.Thread(target=_update_cpu, daemon=True).start()
 
 
 def gpu_stats():
@@ -70,7 +81,7 @@ def cpu_temp():
 def stats():
     vm = psutil.virtual_memory()
     return {
-        "cpu": {"use": psutil.cpu_percent(None), "temp": cpu_temp()},
+        "cpu": {"use": CPU_USE, "temp": cpu_temp()},
         "mem": {"use": vm.percent, "used": vm.used / 2**30, "total": vm.total / 2**30},
         "gpu": gpu_stats(),
     }
